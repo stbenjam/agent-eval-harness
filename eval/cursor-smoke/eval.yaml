@@ -1,0 +1,77 @@
+name: cursor-smoke
+description: Smoke test for Cursor CLI agent (Grok 4.5) — creates a file and verifies content
+skill: cursor-smoke
+
+execution:
+  mode: case
+  arguments: "{prompt}"
+  timeout: 120
+  max_budget_usd: 1.0
+  env:
+    EVAL_PROJECT_ROOT: "$PWD"
+
+runner:
+  type: cli
+  command:
+    - bash
+    - -c
+    - exec "$EVAL_PROJECT_ROOT/eval/cursor-smoke/scripts/run-cursor.sh" "$@"
+    - --
+    - "{args}"
+    - "{workspace}"
+    - "{output_dir}"
+    - "{model}"
+
+models:
+  skill: grok-4.5-xhigh
+
+dataset:
+  path: cases
+  schema: |
+    Each case directory contains:
+    - input.yaml: prompt (the task for cursor to execute)
+    - annotations.yaml: expected_file, expected_content (used by judges)
+
+outputs:
+  - path: output
+    schema: Files created by cursor during execution
+
+traces:
+  stdout: true
+  stderr: true
+  events: false
+  metrics: true
+
+judges:
+  - name: exit_success
+    description: Cursor agent exited successfully
+    check: |
+      ec = outputs.get("exit_code", -1)
+      if ec == 0:
+        return True, "Exit code 0"
+      return False, f"Exit code {ec}"
+
+  - name: file_created
+    description: Expected file exists with correct content
+    check: |
+      ann = outputs.get("annotations", {})
+      expected_file = ann.get("expected_file", "")
+      expected_content = ann.get("expected_content", "")
+      if not expected_file:
+        return False, "No expected_file in annotations"
+      files = outputs.get("files", {})
+      for path, content in files.items():
+        if expected_file in path and isinstance(content, str):
+          if expected_content and expected_content in content:
+            return True, f"Found {expected_file} with expected content"
+          elif not expected_content:
+            return True, f"Found {expected_file}"
+          else:
+            return False, f"Found {expected_file} but content mismatch: {content[:200]}"
+      return False, f"File {expected_file} not found in outputs: {list(files.keys())[:10]}"
+
+thresholds:
+  exit_success:
+    min_pass_rate: 1.0
+  file_created:
+    min_pass_rate: 1.0

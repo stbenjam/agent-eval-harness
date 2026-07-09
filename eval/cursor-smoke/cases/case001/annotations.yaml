@@ -1,0 +1,2 @@
+expected_file: hello.txt
+expected_content: "Hello from Grok 4.5"
